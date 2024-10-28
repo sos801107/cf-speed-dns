@@ -5,9 +5,13 @@ import os
 import json
 
 # API 密钥
-CF_API_TOKEN    =  os.environ["CF_API_TOKEN"]
-CF_ZONE_ID      =  os.environ["CF_ZONE_ID"]
-CF_DNS_NAME     =  os.environ["CF_DNS_NAME"]
+CF_API_TOKEN    =   os.environ["CF_API_TOKEN"]
+CF_ZONE_ID      =   os.environ["CF_ZONE_ID"]
+CF_DNS_NAME     =   os.environ["CF_DNS_NAME"]
+
+
+
+
 
 headers = {
     'Authorization': f'Bearer {CF_API_TOKEN}',
@@ -28,54 +32,59 @@ def get_cf_speed_test_ip(timeout=10, max_retries=5):
     # 如果所有尝试都失败，返回 None 或者抛出异常，根据需要进行处理
     return None
 
-def delete_and_push_dns_records(ip):
-    url = f"https://api.cloudflare.com/client/v4/zones/{CF_ZONE_ID}/dns_records?name={CF_DNS_NAME}"
-    try:
-        response = requests.get(url, headers=headers)
-        response.raise_for_status()
-        data = response.json()
+# 获取 DNS 记录
+def get_dns_records(name):
+    def_info = []
+    url = f'https://api.cloudflare.com/client/v4/zones/{CF_ZONE_ID}/dns_records'
+    response = requests.get(url, headers=headers)
+    if response.status_code == 200:
+        records = response.json()['result']
+        for record in records:
+            if record['name'] == name:
+                def_info.append(record['id'])
+        return def_info
+    else:
+        print('Error fetching DNS records:', response.text)
 
-        if 'result' in data:
-            for record in data['result']:
-                record_id = record['id']
-                delete_dns_record(record_id)
-    except requests.RequestException:
+# 更新 DNS 记录
+def update_dns_record(record_id, name, cf_ip):
+    url = f'https://api.cloudflare.com/client/v4/zones/{CF_ZONE_ID}/dns_records/{record_id}'
+    data = {
+        'type': 'A',
+        'name': name,
+        'content': cf_ip,
+         "ttl": 60,
+         "proxied": False
+    }
+
+    response = requests.put(url, headers=headers, json=data)
+
+    if response.status_code == 200:
+        print(f"cf_dns_change success: ---- Time: " + str(
+            time.strftime("%Y-%m-%d %H:%M:%S", time.localtime())) + " ---- ip：" + str(cf_ip))
+        return "ip:" + str(cf_ip) + "解析" + str(name) + "成功"
+    else:
+        traceback.print_exc()
+        print(f"cf_dns_change ERROR: ---- Time: " + str(
+            time.strftime("%Y-%m-%d %H:%M:%S", time.localtime())) + " ---- MESSAGE: " + str(e))
+        return "ip:" + str(cf_ip) + "解析" + str(name) + "失败"
         pass  # 忽略错误
 
-    try:
-        data = {
-            "type": "A",
-            "name": "{CF_DNS_NAME}",
-            "content": ip,
-            "ttl": 60,
-            "proxied": False
-        }
-        response = requests.post(url, headers=headers, json=data)
-        if response.status_code == 200:
-            print(f"cf_dns_change success: ---- Time: " + str(time.strftime("%Y-%m-%d %H:%M:%S", time.localtime())) + " ---- ip：" + str(ip))
-        else:
-            print(f"cf_dns_change ERROR: ---- Time: " + str(time.strftime("%Y-%m-%d %H:%M:%S", time.localtime())) + " ---- MESSAGE: " + str(response.text))
-    except requests.RequestException:
-        pass  # 忽略错误
-
-def delete_dns_record(record_id):
-    url = f"https://api.cloudflare.com/client/v4/zones/{CF_ZONE_ID}/dns_records/{record_id}"
-
-    try:
-        response = requests.delete(url, headers=headers)
-        if response.status_code == 200:
-            print(f"Deleted record_id: {record_id}")
-        else:
-            raise Exception(f"Failed to delete DNS record with ID {record_id}: {response.text}")
-    except requests.RequestException:
-        pass  # 忽略错误
 
 # 主函数
 def main():
     # 获取最新优选IP
     ip_addresses_str = get_cf_speed_test_ip()
     ip_addresses = ip_addresses_str.split(',')
-    delete_and_push_dns_records(ip_addresses[0])
+    dns_records = get_dns_records(CF_DNS_NAME)
+    push_plus_content = []
+    # 遍历 IP 地址列表
+    for index, ip_address in enumerate(ip_addresses):
+        # 执行 DNS 变更
+        dns = update_dns_record(dns_records[index], CF_DNS_NAME, ip_address)
+        push_plus_content.append(dns)
+
+    push_plus('\n'.join(push_plus_content))
 
 if __name__ == '__main__':
     main()

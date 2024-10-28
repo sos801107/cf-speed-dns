@@ -45,7 +45,7 @@ def delete_and_push_dns_records(ip):
     try:
         data = {
             "type": "A",
-            "name": "best",
+            "name": "name",
             "content": ip,
             "ttl": 60,
             "proxied": False
